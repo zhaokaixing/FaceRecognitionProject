@@ -3,6 +3,7 @@ package project.lzc.zkx.facerecognitionproject;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -26,6 +27,8 @@ import android.os.Environment;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Base64;
+import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Surface;
@@ -40,11 +43,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
 import java.net.Socket;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,6 +80,9 @@ public class MainActivity extends AppCompatActivity{
     private Size previewSize;
     private ImageView iv;
     private String compressedImageOutputPath = null;
+
+    StringBuilder resultString = new StringBuilder();
+
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     static
     {
@@ -127,28 +140,83 @@ public class MainActivity extends AppCompatActivity{
                     //System.out.println(baos.toString());
 
                     System.out.println("666");
-                    Socket s = new Socket("192.168.43.119", 9999);
-                    DataOutputStream dos = new DataOutputStream(s.getOutputStream());
+                    //Socket s = new Socket("192.168.43.119", 9997);
+                    //DataOutputStream dos = new DataOutputStream(s.getOutputStream());
                     byte[] tempArray = baos.toByteArray();
+                    String sTemp = Base64.encodeToString(tempArray, Base64.DEFAULT);
+                    //System.out.println(sTemp);
+                    //byte[] sTempBytes = sTemp.getBytes();
+                    Log.e("Base64", "Base64---->" + sTemp);
+                    //int size = sTemp.length();
+                    //dos.writeInt(size);
+                    //dos.write(sTemp.getBytes());
 
-                    //dos.write(baos.toByteArray());
-                    for(int i = 0; i < tempArray.length;i=i+1024){
-                        byte[] temp = new byte[1024];
-                        System.arraycopy(tempArray, i, temp, i, 1024);
-                        System.out.println(tempArray[i]);
-                        dos.write(temp);
+                    String path = "http://192.168.43.119:8080/FaceRecognitionProject/serverTest";
+                    URL url = new URL(path);
+                    HttpURLConnection conn =  (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(10000);
+                    conn.setRequestMethod("POST");
+                    //String data = "sTemp=" + URLEncoder.encode(sTemp);
+                    //conn.setRequestProperty("Content=Type", "application/x-wwww-form-urlencoded");
+                    //conn.setRequestProperty("Content-length", data.length()+"");
+                    OutputStreamWriter out = new OutputStreamWriter(conn.getOutputStream());
+                    out.write(sTemp);
+                    out.close();
+
+                    BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
+                    String returnString="";
+
+                    while ((returnString = in.readLine()) != null)
+                    {
+                        resultString.append(returnString);
                     }
-                    String line = null;
-                    DataInputStream dis2 = new DataInputStream(s.getInputStream());
-                    InputStreamReader disR2 = new InputStreamReader(dis2);
-                    BufferedReader br = new BufferedReader(disR2);
-                    while((line = br.readLine()) != null){
-                        System.out.println(line);
+                    in.close();
+
+
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+
+                            System.out.println(resultString.toString());
+
+                        }
+                    });
+
+                    Bitmap resultBitmap = null;
+                    try {
+                        byte[] bitmapArray = Base64.decode(resultString.toString(), Base64.DEFAULT);
+                        resultBitmap = BitmapFactory.decodeByteArray(bitmapArray, 0, bitmapArray.length);
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
 
-                    dis2.close();
+                    Long currentTime = System.currentTimeMillis();
+                    String resultPicturePath = currentTime + ".jpg";
+                    File resultFile = new File("/sdcard/DCIM/Camera/"+resultPicturePath);
+                    if(resultFile.exists()){
+                        resultFile.delete();
+                    }
+                    FileOutputStream resultOut;
+                    try{
+                        resultOut = new FileOutputStream(resultFile);
+                        if(resultBitmap.compress(Bitmap.CompressFormat.PNG, 90, resultOut))
+                        {
+                            resultOut.flush();
+                            resultOut.close();
+                        }
+                    }
+                    catch (FileNotFoundException e)
+                    {
+                        e.printStackTrace();
+                    }
+                    catch (IOException e)
+                    {
+                        e.printStackTrace();
+                    }
 
-                    s.close();
+                    Intent intent = new Intent(MainActivity.this, ResultActivity.class);
+                    intent.putExtra("resultPath", resultPicturePath);
+                    startActivity(intent);
 
                 } catch (IOException e) {
                     e.printStackTrace();
